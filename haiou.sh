@@ -2,24 +2,34 @@
 
 ############################################################
 # Haiou Reality XHTTP Script
-# GitHub Raw:
+#
+# GitHub:
+# https://github.com/Eranther/haiou
+#
+# Raw:
 # https://raw.githubusercontent.com/Eranther/haiou/main/haiou.sh
 #
 # 功能:
 # 1. 安装 Xray-core
 # 2. 部署 VLESS + REALITY + XHTTP
-# 3. 自动生成 vless:// 分享链接
+# 3. 自动生成 VLESS 分享链接
 # 4. 自动生成 Clash / Mihomo 订阅
-# 5. 终端 ANSI 二维码输出，不生成 PNG
+# 5. ANSI 二维码输出
 # 6. 开启 BBR
 # 7. 更新 / 重启 / 卸载 Xray
 # 8. 在线更新脚本
 #
 # 安装:
-# wget -O /usr/local/bin/haiou https://raw.githubusercontent.com/Eranther/haiou/main/haiou.sh && chmod +x /usr/local/bin/haiou && haiou
+#
+# wget -O /usr/local/bin/haiou \
+# https://raw.githubusercontent.com/Eranther/haiou/main/haiou.sh && \
+# chmod +x /usr/local/bin/haiou && \
+# haiou
 #
 # 后续唤醒:
+#
 # haiou
+#
 ############################################################
 
 set -e
@@ -37,35 +47,80 @@ RED="\033[31m"
 YELLOW="\033[33m"
 PLAIN="\033[0m"
 
+############################################################
+# 检查 root
+############################################################
 check_root() {
-    [[ $EUID -ne 0 ]] && echo -e "${RED}请使用 root 运行${PLAIN}" && exit 1
+
+    if [[ $EUID -ne 0 ]]; then
+        echo -e "${RED}请使用 root 运行${PLAIN}"
+        exit 1
+    fi
 }
 
+############################################################
+# 检查系统
+############################################################
 check_os() {
+
     if [[ ! -f /etc/debian_version ]]; then
         echo -e "${RED}当前脚本仅支持 Debian / Ubuntu${PLAIN}"
         exit 1
     fi
 }
 
+############################################################
+# 安装基础依赖
+############################################################
 install_base() {
+
     apt update
-    apt install -y curl wget unzip jq openssl uuid-runtime qrencode nginx ca-certificates
+
+    apt install -y \
+    curl \
+    wget \
+    unzip \
+    jq \
+    openssl \
+    uuid-runtime \
+    qrencode \
+    nginx \
+    ca-certificates
 }
 
+############################################################
+# 安装 Xray
+############################################################
 install_xray() {
+
+    echo
     echo -e "${YELLOW}正在安装 / 更新 Xray-core...${PLAIN}"
+
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 }
 
+############################################################
+# 开启 BBR
+############################################################
 enable_bbr() {
-    grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf || echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
-    grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+
+    grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf || \
+    echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
+
+    grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf || \
+    echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
+
     sysctl -p >/dev/null 2>&1 || true
+
+    echo
     echo -e "${GREEN}BBR 已开启${PLAIN}"
 }
 
+############################################################
+# 获取公网 IP
+############################################################
 get_ip() {
+
     SERVER_IP=$(curl -4 -s --max-time 8 https://api.ipify.org || true)
 
     if [[ -z "$SERVER_IP" ]]; then
@@ -73,11 +128,15 @@ get_ip() {
     fi
 
     if [[ -z "$SERVER_IP" ]]; then
-        read -rp "无法自动获取公网 IP，请手动输入服务器公网 IP: " SERVER_IP
+        read -rp "请输入服务器公网 IP: " SERVER_IP
     fi
 }
 
+############################################################
+# 开放防火墙
+############################################################
 open_firewall() {
+
     local port="$1"
 
     if command -v ufw >/dev/null 2>&1; then
@@ -90,8 +149,13 @@ open_firewall() {
     fi
 }
 
+############################################################
+# 生成配置
+############################################################
 generate_config() {
+
     clear
+
     echo -e "${GREEN}Haiou Reality XHTTP 安装${PLAIN}"
     echo
 
@@ -108,9 +172,12 @@ generate_config() {
     NODE_NAME=${NODE_NAME:-Haiou-Reality-XHTTP}
 
     UUID=$(xray uuid)
+
     KEYS=$(xray x25519)
+
     PRIVATE_KEY=$(echo "$KEYS" | awk '/Private key/ {print $3}')
     PUBLIC_KEY=$(echo "$KEYS" | awk '/Public key/ {print $3}')
+
     SHORT_ID=$(openssl rand -hex 8)
 
     get_ip
@@ -133,7 +200,7 @@ cat > "$XRAY_CONFIG" <<EOF
         "clients": [
           {
             "id": "${UUID}",
-            "email": "haiou@reality-xhttp"
+            "email": "haiou@reality"
           }
         ],
         "decryption": "none"
@@ -172,27 +239,14 @@ cat > "$XRAY_CONFIG" <<EOF
     {
       "tag": "direct",
       "protocol": "freedom"
-    },
-    {
-      "tag": "block",
-      "protocol": "blackhole"
     }
-  ],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "protocol": [
-          "bittorrent"
-        ],
-        "outboundTag": "block"
-      }
-    ]
-  }
+  ]
 }
 EOF
 
-    echo -e "${YELLOW}正在检测 Xray 配置...${PLAIN}"
+    echo
+    echo -e "${YELLOW}正在检测配置...${PLAIN}"
+
     xray test -config "$XRAY_CONFIG"
 
     systemctl enable xray
@@ -303,43 +357,54 @@ haiou
 查看节点:
 cat /root/reality-info.txt
 
-查看 Xray 状态:
-systemctl status xray
-
-查看 Xray 日志:
+查看日志:
 journalctl -u xray -f
+
+查看状态:
+systemctl status xray
 
 =========================================
 
 EOF
 
     clear
+
     cat "$INFO_FILE"
 
     echo
     echo "========================================="
     echo "二维码:"
     echo "========================================="
+
     qrencode -t ANSIUTF8 "$VLESS_URI"
 
     echo
     echo -e "${GREEN}安装完成${PLAIN}"
 }
 
+############################################################
+# 查看节点信息
+############################################################
 show_info() {
+
     if [[ -f "$INFO_FILE" ]]; then
         cat "$INFO_FILE"
     else
-        echo -e "${RED}未找到节点信息，请先安装。${PLAIN}"
+        echo -e "${RED}未找到节点信息${PLAIN}"
     fi
 }
 
+############################################################
+# 查看二维码
+############################################################
 show_qrcode() {
+
     if [[ -f "$INFO_FILE" ]]; then
+
         URI=$(grep '^vless://' "$INFO_FILE" || true)
 
         if [[ -z "$URI" ]]; then
-            echo -e "${RED}未找到 vless:// 分享链接。${PLAIN}"
+            echo -e "${RED}未找到二维码信息${PLAIN}"
             return
         fi
 
@@ -347,46 +412,80 @@ show_qrcode() {
         echo "========================================="
         echo "二维码:"
         echo "========================================="
+
         qrencode -t ANSIUTF8 "$URI"
+
     else
-        echo -e "${RED}未找到节点信息，请先安装。${PLAIN}"
+        echo -e "${RED}未安装${PLAIN}"
     fi
 }
 
+############################################################
+# 重启 Xray
+############################################################
 restart_xray() {
+
     systemctl restart xray
+
+    echo
     echo -e "${GREEN}Xray 已重启${PLAIN}"
 }
 
+############################################################
+# 查看状态
+############################################################
 status_xray() {
+
     systemctl status xray --no-pager
 }
 
+############################################################
+# 更新 Xray
+############################################################
 update_xray() {
+
+    echo
     echo -e "${YELLOW}正在更新 Xray-core...${PLAIN}"
+
     bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+
     systemctl restart xray || true
-    echo -e "${GREEN}Xray 已更新${PLAIN}"
+
+    echo
+    echo -e "${GREEN}Xray 更新完成${PLAIN}"
 }
 
+############################################################
+# 更新脚本
+############################################################
 update_script() {
+
     echo
-    echo -e "${YELLOW}正在从 GitHub Raw 更新 haiou 脚本...${PLAIN}"
+    echo -e "${YELLOW}正在更新 haiou...${PLAIN}"
 
     wget -O /usr/local/bin/haiou "$SCRIPT_URL"
+
     chmod +x /usr/local/bin/haiou
 
     echo
     echo -e "${GREEN}脚本更新完成${PLAIN}"
+
     echo
     echo "重新执行:"
     echo "haiou"
 }
 
+############################################################
+# 卸载
+############################################################
 uninstall_all() {
-    read -rp "确认卸载 Xray 和节点配置？[y/N]: " confirm
 
-    [[ "$confirm" != "y" && "$confirm" != "Y" ]] && echo "已取消" && return
+    read -rp "确认卸载? [y/N]: " confirm
+
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "已取消"
+        return
+    fi
 
     systemctl stop xray || true
     systemctl disable xray || true
@@ -396,12 +495,18 @@ uninstall_all() {
     rm -f "$INFO_FILE"
     rm -f "$SUB_FILE"
 
+    echo
     echo -e "${GREEN}卸载完成${PLAIN}"
 }
 
+############################################################
+# 菜单
+############################################################
 menu() {
+
     clear
-    echo -e "${GREEN}Haiou Reality XHTTP 管理脚本${PLAIN}"
+
+    echo -e "${GREEN}Haiou Reality XHTTP${PLAIN}"
     echo
     echo "1. 安装 / 重装 VLESS + REALITY + XHTTP"
     echo "2. 查看节点信息"
@@ -410,7 +515,7 @@ menu() {
     echo "5. 查看 Xray 状态"
     echo "6. 更新 Xray"
     echo "7. 开启 BBR"
-    echo "8. 更新 haiou 脚本"
+    echo "8. 更新 haiou"
     echo "9. 卸载"
     echo "0. 退出"
     echo
@@ -460,11 +565,7 @@ check_root
 check_os
 
 while true; do
-
     menu
-
     echo
-
     read -rp "按回车返回菜单..."
-
 done
