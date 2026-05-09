@@ -460,7 +460,11 @@ check_root
 check_os
 
 while true; do
+
     menu
+
     echo
+
     read -rp "按回车返回菜单..."
+
 done
