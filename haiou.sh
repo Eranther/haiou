@@ -34,7 +34,7 @@
 
 set -e
 
-SCRIPT_VERSION="2026.05.10.9"
+SCRIPT_VERSION="2026.05.10.10"
 
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
@@ -381,7 +381,6 @@ proxies:
       - h2
       - http/1.1
     servername: ${SNI}
-    fingerprint: chrome
     client-fingerprint: chrome
     skip-cert-verify: true
     encryption: ""
