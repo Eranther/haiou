@@ -34,10 +34,11 @@
 
 set -e
 
-SCRIPT_VERSION="2026.05.10.6"
+SCRIPT_VERSION="2026.05.10.7"
 
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
+STATE_FILE="/root/reality-state.json"
 
 SUB_DIR="/var/www/html"
 SUB_FILE="${SUB_DIR}/reality-xhttp.yaml"
@@ -265,6 +266,209 @@ validate_generated_config() {
 }
 
 ############################################################
+# 写入节点状态
+############################################################
+save_node_state() {
+
+    jq -n \
+        --arg server_ip "$SERVER_IP" \
+        --arg port "$PORT" \
+        --arg uuid "$UUID" \
+        --arg sni "$SNI" \
+        --arg public_key "$PUBLIC_KEY" \
+        --arg short_id "$SHORT_ID" \
+        --arg xhttp_path "$XHTTP_PATH" \
+        --arg node_name "$NODE_NAME" \
+        --arg clash_mode "stream-one" \
+        '{
+            server_ip: $server_ip,
+            port: $port,
+            uuid: $uuid,
+            sni: $sni,
+            public_key: $public_key,
+            short_id: $short_id,
+            xhttp_path: $xhttp_path,
+            node_name: $node_name,
+            clash_mode: $clash_mode
+        }' > "$STATE_FILE"
+}
+
+############################################################
+# 读取旧 info 文件字段
+############################################################
+read_info_value() {
+
+    local label="$1"
+
+    awk -v label="$label" '
+        $0 == label ":" {
+            getline
+            print
+            exit
+        }
+    ' "$INFO_FILE"
+}
+
+############################################################
+# 读取节点状态
+############################################################
+load_node_state() {
+
+    if [[ -f "$STATE_FILE" ]]; then
+        if ! command -v jq >/dev/null 2>&1; then
+            echo -e "${RED}缺少 jq，请先选择安装 / 重装或执行: apt install -y jq${PLAIN}"
+            return 1
+        fi
+
+        SERVER_IP=$(jq -r '.server_ip // ""' "$STATE_FILE")
+        PORT=$(jq -r '.port // ""' "$STATE_FILE")
+        UUID=$(jq -r '.uuid // ""' "$STATE_FILE")
+        SNI=$(jq -r '.sni // ""' "$STATE_FILE")
+        PUBLIC_KEY=$(jq -r '.public_key // ""' "$STATE_FILE")
+        SHORT_ID=$(jq -r '.short_id // ""' "$STATE_FILE")
+        XHTTP_PATH=$(jq -r '.xhttp_path // "/xhttp"' "$STATE_FILE")
+        NODE_NAME=$(jq -r '.node_name // "Haiou-Reality-XHTTP"' "$STATE_FILE")
+        CLASH_MODE=$(jq -r '.clash_mode // "stream-one"' "$STATE_FILE")
+    elif [[ -f "$INFO_FILE" ]]; then
+        SERVER_IP=$(read_info_value "服务器 IP")
+        PORT=$(read_info_value "端口")
+        UUID=$(read_info_value "UUID")
+        SNI=$(read_info_value "SNI")
+        PUBLIC_KEY=$(read_info_value "PublicKey")
+        SHORT_ID=$(read_info_value "ShortID")
+        XHTTP_PATH=$(read_info_value "Path")
+        NODE_NAME="Haiou-Reality-XHTTP"
+        CLASH_MODE="stream-one"
+    else
+        echo -e "${RED}未找到节点信息，请先安装节点${PLAIN}"
+        return 1
+    fi
+
+    if [[ -z "$SERVER_IP" || -z "$PORT" || -z "$UUID" || -z "$SNI" || -z "$PUBLIC_KEY" || -z "$SHORT_ID" || -z "$XHTTP_PATH" ]]; then
+        echo -e "${RED}节点信息不完整，无法生成 Clash Verge YAML${PLAIN}"
+        return 1
+    fi
+}
+
+############################################################
+# 生成 Clash Verge / Mihomo 订阅
+############################################################
+write_clash_verge_yaml() {
+
+    mkdir -p "$SUB_DIR"
+
+cat > "$SUB_FILE" <<EOF
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: info
+ipv6: false
+
+proxies:
+  - name: "${NODE_NAME}"
+    type: vless
+    server: ${SERVER_IP}
+    port: ${PORT}
+    uuid: ${UUID}
+    network: xhttp
+    tls: true
+    udp: true
+    alpn:
+      - h2
+    servername: ${SNI}
+    fingerprint: chrome
+    client-fingerprint: chrome
+    encryption: ""
+    reality-opts:
+      public-key: ${PUBLIC_KEY}
+      short-id: ${SHORT_ID}
+    xhttp-opts:
+      path: "${XHTTP_PATH}"
+      host: ${SNI}
+      mode: ${CLASH_MODE:-stream-one}
+
+proxy-groups:
+  - name: Proxy
+    type: select
+    proxies:
+      - "${NODE_NAME}"
+
+rules:
+  - MATCH,Proxy
+EOF
+}
+
+############################################################
+# 重新生成 Clash Verge 订阅
+############################################################
+regenerate_clash_verge_yaml() {
+
+    load_node_state || return
+    write_clash_verge_yaml
+
+    systemctl enable nginx >/dev/null 2>&1 || true
+    systemctl restart nginx || true
+    open_firewall 80
+
+    echo
+    echo -e "${GREEN}Clash Verge YAML 已重新生成${PLAIN}"
+    echo
+    echo "订阅地址:"
+    echo "http://${SERVER_IP}/reality-xhttp.yaml"
+    echo
+    echo "本地文件:"
+    echo "$SUB_FILE"
+}
+
+############################################################
+# 查看节点摘要
+############################################################
+show_nodes() {
+
+    load_node_state || return
+
+    echo
+    echo "========================================="
+    echo "当前节点"
+    echo "========================================="
+    echo "名称: ${NODE_NAME}"
+    echo "地址: ${SERVER_IP}:${PORT}"
+    echo "协议: VLESS + REALITY + XHTTP"
+    echo "SNI: ${SNI}"
+    echo "Path: ${XHTTP_PATH}"
+    echo "Clash Verge YAML: http://${SERVER_IP}/reality-xhttp.yaml"
+}
+
+############################################################
+# 删除节点配置
+############################################################
+delete_node() {
+
+    if [[ ! -f "$XRAY_CONFIG" && ! -f "$INFO_FILE" && ! -f "$SUB_FILE" && ! -f "$STATE_FILE" ]]; then
+        echo -e "${YELLOW}当前没有可删除的节点配置${PLAIN}"
+        return
+    fi
+
+    read -rp "确认删除节点配置并停止 Xray? [y/N]: " confirm
+
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        echo "已取消"
+        return
+    fi
+
+    systemctl stop xray || true
+
+    rm -f "$XRAY_CONFIG"
+    rm -f "$INFO_FILE"
+    rm -f "$SUB_FILE"
+    rm -f "$STATE_FILE"
+
+    echo
+    echo -e "${GREEN}节点配置已删除，Xray 已停止${PLAIN}"
+    echo "如需移除 Xray 程序本体，请使用卸载功能。"
+}
+
+############################################################
 # 生成配置
 ############################################################
 generate_config() {
@@ -375,45 +579,9 @@ EOF
 
     VLESS_URI="vless://${UUID}@${SERVER_IP}:${PORT}?encryption=none&security=reality&sni=${SNI}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=xhttp&path=${XHTTP_PATH}#${NODE_NAME}"
 
-cat > "$SUB_FILE" <<EOF
-mixed-port: 7890
-allow-lan: false
-mode: rule
-log-level: info
-ipv6: false
-
-proxies:
-  - name: "${NODE_NAME}"
-    type: vless
-    server: ${SERVER_IP}
-    port: ${PORT}
-    uuid: ${UUID}
-    network: xhttp
-    tls: true
-    udp: true
-    alpn:
-      - h2
-    servername: ${SNI}
-    fingerprint: chrome
-    client-fingerprint: chrome
-    encryption: ""
-    reality-opts:
-      public-key: ${PUBLIC_KEY}
-      short-id: ${SHORT_ID}
-    xhttp-opts:
-      path: "${XHTTP_PATH}"
-      host: ${SNI}
-      mode: stream-one
-
-proxy-groups:
-  - name: Proxy
-    type: select
-    proxies:
-      - "${NODE_NAME}"
-
-rules:
-  - MATCH,Proxy
-EOF
+    CLASH_MODE="stream-one"
+    save_node_state
+    write_clash_verge_yaml
 
 cat > "$INFO_FILE" <<EOF
 
@@ -464,7 +632,7 @@ VLESS 分享链接:
 ${VLESS_URI}
 
 =========================================
-Clash / Mihomo 订阅:
+Clash Verge / Mihomo 订阅:
 =========================================
 
 http://${SERVER_IP}/reality-xhttp.yaml
@@ -585,7 +753,7 @@ update_script() {
     echo
     echo -e "${YELLOW}正在更新 haiou...${PLAIN}"
 
-    wget -O /usr/local/bin/haiou "$SCRIPT_URL"
+    wget --no-cache -O /usr/local/bin/haiou "${SCRIPT_URL}?$(date +%s)"
 
     chmod +x /usr/local/bin/haiou
 
@@ -616,6 +784,7 @@ uninstall_all() {
 
     rm -f "$INFO_FILE"
     rm -f "$SUB_FILE"
+    rm -f "$STATE_FILE"
 
     echo
     echo -e "${GREEN}卸载完成${PLAIN}"
@@ -631,14 +800,17 @@ menu() {
     echo -e "${GREEN}Haiou Reality XHTTP${PLAIN} v${SCRIPT_VERSION}"
     echo
     echo "1. 安装 / 重装 VLESS + REALITY + XHTTP"
-    echo "2. 查看节点信息"
+    echo "2. 查看节点摘要"
     echo "3. 查看二维码"
-    echo "4. 重启 Xray"
-    echo "5. 查看 Xray 状态"
-    echo "6. 更新 Xray"
-    echo "7. 开启 BBR"
-    echo "8. 更新 haiou"
-    echo "9. 卸载"
+    echo "4. 重新生成 Clash Verge YAML"
+    echo "5. 查看完整节点信息"
+    echo "6. 删除节点配置"
+    echo "7. 重启 Xray"
+    echo "8. 查看 Xray 状态"
+    echo "9. 更新 Xray"
+    echo "10. 开启 BBR"
+    echo "11. 更新 haiou"
+    echo "12. 卸载"
     echo "0. 退出"
     echo
 
@@ -651,27 +823,36 @@ menu() {
             generate_config
             ;;
         2)
-            show_info
+            show_nodes
             ;;
         3)
             show_qrcode
             ;;
         4)
-            restart_xray
+            regenerate_clash_verge_yaml
             ;;
         5)
-            status_xray
+            show_info
             ;;
         6)
-            update_xray
+            delete_node
             ;;
         7)
-            enable_bbr
+            restart_xray
             ;;
         8)
-            update_script
+            status_xray
             ;;
         9)
+            update_xray
+            ;;
+        10)
+            enable_bbr
+            ;;
+        11)
+            update_script
+            ;;
+        12)
             uninstall_all
             ;;
         0)
