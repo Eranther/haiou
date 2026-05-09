@@ -34,7 +34,7 @@
 
 set -e
 
-SCRIPT_VERSION="2026.05.10.3"
+SCRIPT_VERSION="2026.05.10.4"
 
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
@@ -178,24 +178,87 @@ generate_reality_keys() {
     KEYS=$(xray x25519 2>&1)
 
     PRIVATE_KEY=$(printf '%s\n' "$KEYS" | awk '
-        tolower($0) ~ /private.*key/ {
-            sub(/^[^:]*:[[:space:]]*/, "", $0)
-            print $NF
-            exit
+        BEGIN { want_next = 0 }
+        {
+            line = $0
+            lower = tolower(line)
+
+            if (want_next == 1) {
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ /^[A-Za-z0-9_-]{20,}$/) {
+                        print $i
+                        exit
+                    }
+                }
+            }
+
+            if (lower ~ /private/ && lower ~ /key/) {
+                sub(/^[^:]*:[[:space:]]*/, "", line)
+                n = split(line, parts, /[[:space:]]+/)
+                for (i = n; i >= 1; i--) {
+                    if (parts[i] ~ /^[A-Za-z0-9_-]{20,}$/) {
+                        print parts[i]
+                        exit
+                    }
+                }
+                want_next = 1
+            }
         }
     ')
 
     PUBLIC_KEY=$(printf '%s\n' "$KEYS" | awk '
-        tolower($0) ~ /public.*key/ {
-            sub(/^[^:]*:[[:space:]]*/, "", $0)
-            print $NF
-            exit
+        BEGIN { want_next = 0 }
+        {
+            line = $0
+            lower = tolower(line)
+
+            if (want_next == 1) {
+                for (i = 1; i <= NF; i++) {
+                    if ($i ~ /^[A-Za-z0-9_-]{20,}$/) {
+                        print $i
+                        exit
+                    }
+                }
+            }
+
+            if (lower ~ /public/ && lower ~ /key/) {
+                sub(/^[^:]*:[[:space:]]*/, "", line)
+                n = split(line, parts, /[[:space:]]+/)
+                for (i = n; i >= 1; i--) {
+                    if (parts[i] ~ /^[A-Za-z0-9_-]{20,}$/) {
+                        print parts[i]
+                        exit
+                    }
+                }
+                want_next = 1
+            }
         }
     ')
 
     if [[ -z "$PRIVATE_KEY" || -z "$PUBLIC_KEY" ]]; then
         echo
         echo -e "${RED}Reality 密钥生成失败，无法解析 xray x25519 输出:${PLAIN}"
+        printf '%s\n' "$KEYS"
+        return 1
+    fi
+}
+
+############################################################
+# 检查生成后的配置关键字段
+############################################################
+validate_generated_config() {
+
+    local config_private_key
+
+    config_private_key=$(jq -r '.inbounds[0].streamSettings.realitySettings.privateKey // ""' "$XRAY_CONFIG")
+
+    if [[ -z "$config_private_key" ]]; then
+        echo
+        echo -e "${RED}生成的 Xray 配置 privateKey 为空，已停止。${PLAIN}"
+        echo "脚本版本: ${SCRIPT_VERSION}"
+        echo "脚本路径: ${BASH_SOURCE[0]}"
+        echo
+        echo "xray x25519 原始输出:"
         printf '%s\n' "$KEYS"
         return 1
     fi
@@ -209,6 +272,7 @@ generate_config() {
     clear
 
     echo -e "${GREEN}Haiou Reality XHTTP 安装${PLAIN}"
+    echo "脚本版本: ${SCRIPT_VERSION}"
     echo
 
     read -rp "请输入端口 [默认 443]: " PORT
@@ -292,6 +356,8 @@ cat > "$XRAY_CONFIG" <<EOF
   ]
 }
 EOF
+
+    validate_generated_config
 
     echo
     echo -e "${YELLOW}正在检测配置...${PLAIN}"
