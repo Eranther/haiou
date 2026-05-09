@@ -34,7 +34,7 @@
 
 set -e
 
-SCRIPT_VERSION="2026.05.10.8"
+SCRIPT_VERSION="2026.05.10.9"
 
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
@@ -372,16 +372,24 @@ proxies:
     server: ${SERVER_IP}
     port: ${PORT}
     uuid: ${UUID}
+    packet-encoding: xudp
     network: tcp
     tls: true
     udp: true
     flow: ${FLOW}
+    alpn:
+      - h2
+      - http/1.1
     servername: ${SNI}
     fingerprint: chrome
     client-fingerprint: chrome
+    skip-cert-verify: true
+    encryption: ""
     reality-opts:
       public-key: ${PUBLIC_KEY}
       short-id: ${SHORT_ID}
+    smux:
+      enabled: false
 
 proxy-groups:
   - name: Proxy
