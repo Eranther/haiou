@@ -34,7 +34,7 @@
 
 set -e
 
-SCRIPT_VERSION="2026.05.10.5"
+SCRIPT_VERSION="2026.05.10.6"
 
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
@@ -394,6 +394,7 @@ proxies:
     alpn:
       - h2
     servername: ${SNI}
+    fingerprint: chrome
     client-fingerprint: chrome
     encryption: ""
     reality-opts:
@@ -402,7 +403,7 @@ proxies:
     xhttp-opts:
       path: "${XHTTP_PATH}"
       host: ${SNI}
-      mode: auto
+      mode: stream-one
 
 proxy-groups:
   - name: Proxy
