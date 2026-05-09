@@ -34,7 +34,7 @@
 
 set -e
 
-SCRIPT_VERSION="2026.05.10.4"
+SCRIPT_VERSION="2026.05.10.5"
 
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
@@ -371,6 +371,7 @@ EOF
     systemctl restart nginx
 
     open_firewall "$PORT"
+    open_firewall 80
 
     VLESS_URI="vless://${UUID}@${SERVER_IP}:${PORT}?encryption=none&security=reality&sni=${SNI}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=xhttp&path=${XHTTP_PATH}#${NODE_NAME}"
 
@@ -390,13 +391,18 @@ proxies:
     network: xhttp
     tls: true
     udp: true
+    alpn:
+      - h2
     servername: ${SNI}
     client-fingerprint: chrome
+    encryption: ""
     reality-opts:
       public-key: ${PUBLIC_KEY}
       short-id: ${SHORT_ID}
     xhttp-opts:
       path: "${XHTTP_PATH}"
+      host: ${SNI}
+      mode: auto
 
 proxy-groups:
   - name: Proxy
