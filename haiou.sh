@@ -169,6 +169,37 @@ test_xray_config() {
 }
 
 ############################################################
+# 生成 Reality 密钥
+############################################################
+generate_reality_keys() {
+
+    KEYS=$(xray x25519)
+
+    PRIVATE_KEY=$(printf '%s\n' "$KEYS" | awk '
+        tolower($0) ~ /private.*key/ {
+            sub(/^[^:]*:[[:space:]]*/, "", $0)
+            print $NF
+            exit
+        }
+    ')
+
+    PUBLIC_KEY=$(printf '%s\n' "$KEYS" | awk '
+        tolower($0) ~ /public.*key/ {
+            sub(/^[^:]*:[[:space:]]*/, "", $0)
+            print $NF
+            exit
+        }
+    ')
+
+    if [[ -z "$PRIVATE_KEY" || -z "$PUBLIC_KEY" ]]; then
+        echo
+        echo -e "${RED}Reality 密钥生成失败，无法解析 xray x25519 输出:${PLAIN}"
+        printf '%s\n' "$KEYS"
+        return 1
+    fi
+}
+
+############################################################
 # 生成配置
 ############################################################
 generate_config() {
@@ -192,10 +223,7 @@ generate_config() {
 
     UUID=$(xray uuid)
 
-    KEYS=$(xray x25519)
-
-    PRIVATE_KEY=$(echo "$KEYS" | awk '/Private key/ {print $3}')
-    PUBLIC_KEY=$(echo "$KEYS" | awk '/Public key/ {print $3}')
+    generate_reality_keys
 
     SHORT_ID=$(openssl rand -hex 8)
 
