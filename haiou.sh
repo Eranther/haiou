@@ -34,6 +34,8 @@
 
 set -e
 
+SCRIPT_VERSION="2026.05.10.3"
+
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
 
@@ -173,7 +175,7 @@ test_xray_config() {
 ############################################################
 generate_reality_keys() {
 
-    KEYS=$(xray x25519)
+    KEYS=$(xray x25519 2>&1)
 
     PRIVATE_KEY=$(printf '%s\n' "$KEYS" | awk '
         tolower($0) ~ /private.*key/ {
@@ -553,7 +555,7 @@ menu() {
 
     clear
 
-    echo -e "${GREEN}Haiou Reality XHTTP${PLAIN}"
+    echo -e "${GREEN}Haiou Reality XHTTP${PLAIN} v${SCRIPT_VERSION}"
     echo
     echo "1. 安装 / 重装 VLESS + REALITY + XHTTP"
     echo "2. 查看节点信息"
