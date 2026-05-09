@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 ############################################################
-# Haiou Reality XHTTP Script
+# Haiou Reality Vision Script
 #
 # GitHub:
 # https://github.com/Eranther/haiou
@@ -11,7 +11,7 @@
 #
 # 功能:
 # 1. 安装 Xray-core
-# 2. 部署 VLESS + REALITY + XHTTP
+# 2. 部署 VLESS + REALITY + TCP + Vision
 # 3. 自动生成 VLESS 分享链接
 # 4. 自动生成 Clash / Mihomo 订阅
 # 5. ANSI 二维码输出
@@ -34,14 +34,15 @@
 
 set -e
 
-SCRIPT_VERSION="2026.05.10.7"
+SCRIPT_VERSION="2026.05.10.8"
 
 XRAY_CONFIG="/usr/local/etc/xray/config.json"
 INFO_FILE="/root/reality-info.txt"
 STATE_FILE="/root/reality-state.json"
 
 SUB_DIR="/var/www/html"
-SUB_FILE="${SUB_DIR}/reality-xhttp.yaml"
+SUB_FILE="${SUB_DIR}/reality-vision.yaml"
+LEGACY_SUB_FILE="${SUB_DIR}/reality-xhttp.yaml"
 
 SCRIPT_URL="https://raw.githubusercontent.com/Eranther/haiou/main/haiou.sh"
 
@@ -277,9 +278,9 @@ save_node_state() {
         --arg sni "$SNI" \
         --arg public_key "$PUBLIC_KEY" \
         --arg short_id "$SHORT_ID" \
-        --arg xhttp_path "$XHTTP_PATH" \
         --arg node_name "$NODE_NAME" \
-        --arg clash_mode "stream-one" \
+        --arg flow "xtls-rprx-vision" \
+        --arg network "tcp" \
         '{
             server_ip: $server_ip,
             port: $port,
@@ -287,9 +288,9 @@ save_node_state() {
             sni: $sni,
             public_key: $public_key,
             short_id: $short_id,
-            xhttp_path: $xhttp_path,
             node_name: $node_name,
-            clash_mode: $clash_mode
+            flow: $flow,
+            network: $network
         }' > "$STATE_FILE"
 }
 
@@ -326,9 +327,8 @@ load_node_state() {
         SNI=$(jq -r '.sni // ""' "$STATE_FILE")
         PUBLIC_KEY=$(jq -r '.public_key // ""' "$STATE_FILE")
         SHORT_ID=$(jq -r '.short_id // ""' "$STATE_FILE")
-        XHTTP_PATH=$(jq -r '.xhttp_path // "/xhttp"' "$STATE_FILE")
-        NODE_NAME=$(jq -r '.node_name // "Haiou-Reality-XHTTP"' "$STATE_FILE")
-        CLASH_MODE=$(jq -r '.clash_mode // "stream-one"' "$STATE_FILE")
+        NODE_NAME=$(jq -r '.node_name // "Haiou-Reality-Vision"' "$STATE_FILE")
+        FLOW=$(jq -r '.flow // "xtls-rprx-vision"' "$STATE_FILE")
     elif [[ -f "$INFO_FILE" ]]; then
         SERVER_IP=$(read_info_value "服务器 IP")
         PORT=$(read_info_value "端口")
@@ -336,18 +336,19 @@ load_node_state() {
         SNI=$(read_info_value "SNI")
         PUBLIC_KEY=$(read_info_value "PublicKey")
         SHORT_ID=$(read_info_value "ShortID")
-        XHTTP_PATH=$(read_info_value "Path")
-        NODE_NAME="Haiou-Reality-XHTTP"
-        CLASH_MODE="stream-one"
+        NODE_NAME="Haiou-Reality-Vision"
+        FLOW="xtls-rprx-vision"
     else
         echo -e "${RED}未找到节点信息，请先安装节点${PLAIN}"
         return 1
     fi
 
-    if [[ -z "$SERVER_IP" || -z "$PORT" || -z "$UUID" || -z "$SNI" || -z "$PUBLIC_KEY" || -z "$SHORT_ID" || -z "$XHTTP_PATH" ]]; then
+    if [[ -z "$SERVER_IP" || -z "$PORT" || -z "$UUID" || -z "$SNI" || -z "$PUBLIC_KEY" || -z "$SHORT_ID" ]]; then
         echo -e "${RED}节点信息不完整，无法生成 Clash Verge YAML${PLAIN}"
         return 1
     fi
+
+    FLOW=${FLOW:-xtls-rprx-vision}
 }
 
 ############################################################
@@ -356,6 +357,7 @@ load_node_state() {
 write_clash_verge_yaml() {
 
     mkdir -p "$SUB_DIR"
+    rm -f "$LEGACY_SUB_FILE"
 
 cat > "$SUB_FILE" <<EOF
 mixed-port: 7890
@@ -370,22 +372,16 @@ proxies:
     server: ${SERVER_IP}
     port: ${PORT}
     uuid: ${UUID}
-    network: xhttp
+    network: tcp
     tls: true
     udp: true
-    alpn:
-      - h2
+    flow: ${FLOW}
     servername: ${SNI}
     fingerprint: chrome
     client-fingerprint: chrome
-    encryption: ""
     reality-opts:
       public-key: ${PUBLIC_KEY}
       short-id: ${SHORT_ID}
-    xhttp-opts:
-      path: "${XHTTP_PATH}"
-      host: ${SNI}
-      mode: ${CLASH_MODE:-stream-one}
 
 proxy-groups:
   - name: Proxy
@@ -414,7 +410,7 @@ regenerate_clash_verge_yaml() {
     echo -e "${GREEN}Clash Verge YAML 已重新生成${PLAIN}"
     echo
     echo "订阅地址:"
-    echo "http://${SERVER_IP}/reality-xhttp.yaml"
+    echo "http://${SERVER_IP}/reality-vision.yaml"
     echo
     echo "本地文件:"
     echo "$SUB_FILE"
@@ -433,10 +429,10 @@ show_nodes() {
     echo "========================================="
     echo "名称: ${NODE_NAME}"
     echo "地址: ${SERVER_IP}:${PORT}"
-    echo "协议: VLESS + REALITY + XHTTP"
+    echo "协议: VLESS + REALITY + TCP + Vision"
     echo "SNI: ${SNI}"
-    echo "Path: ${XHTTP_PATH}"
-    echo "Clash Verge YAML: http://${SERVER_IP}/reality-xhttp.yaml"
+    echo "Flow: ${FLOW}"
+    echo "Clash Verge YAML: http://${SERVER_IP}/reality-vision.yaml"
 }
 
 ############################################################
@@ -461,6 +457,7 @@ delete_node() {
     rm -f "$XRAY_CONFIG"
     rm -f "$INFO_FILE"
     rm -f "$SUB_FILE"
+    rm -f "$LEGACY_SUB_FILE"
     rm -f "$STATE_FILE"
 
     echo
@@ -475,7 +472,7 @@ generate_config() {
 
     clear
 
-    echo -e "${GREEN}Haiou Reality XHTTP 安装${PLAIN}"
+    echo -e "${GREEN}Haiou Reality Vision 安装${PLAIN}"
     echo "脚本版本: ${SCRIPT_VERSION}"
     echo
 
@@ -485,11 +482,8 @@ generate_config() {
     read -rp "请输入 Reality SNI [默认 www.microsoft.com]: " SNI
     SNI=${SNI:-www.microsoft.com}
 
-    read -rp "请输入 XHTTP 路径 [默认 /xhttp]: " XHTTP_PATH
-    XHTTP_PATH=${XHTTP_PATH:-/xhttp}
-
-    read -rp "请输入节点名称 [默认 Haiou-Reality-XHTTP]: " NODE_NAME
-    NODE_NAME=${NODE_NAME:-Haiou-Reality-XHTTP}
+    read -rp "请输入节点名称 [默认 Haiou-Reality-Vision]: " NODE_NAME
+    NODE_NAME=${NODE_NAME:-Haiou-Reality-Vision}
 
     UUID=$(xray uuid)
 
@@ -509,7 +503,7 @@ cat > "$XRAY_CONFIG" <<EOF
   },
   "inbounds": [
     {
-      "tag": "vless-reality-xhttp-in",
+      "tag": "vless-reality-vision-in",
       "listen": "0.0.0.0",
       "port": ${PORT},
       "protocol": "vless",
@@ -517,18 +511,15 @@ cat > "$XRAY_CONFIG" <<EOF
         "clients": [
           {
             "id": "${UUID}",
-            "email": "haiou@reality"
+            "email": "haiou@reality",
+            "flow": "xtls-rprx-vision"
           }
         ],
         "decryption": "none"
       },
       "streamSettings": {
-        "network": "xhttp",
+        "network": "tcp",
         "security": "reality",
-        "xhttpSettings": {
-          "path": "${XHTTP_PATH}",
-          "mode": "auto"
-        },
         "realitySettings": {
           "show": false,
           "dest": "${SNI}:443",
@@ -577,16 +568,16 @@ EOF
     open_firewall "$PORT"
     open_firewall 80
 
-    VLESS_URI="vless://${UUID}@${SERVER_IP}:${PORT}?encryption=none&security=reality&sni=${SNI}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=xhttp&path=${XHTTP_PATH}#${NODE_NAME}"
+    FLOW="xtls-rprx-vision"
+    VLESS_URI="vless://${UUID}@${SERVER_IP}:${PORT}?encryption=none&security=reality&sni=${SNI}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp&flow=${FLOW}#${NODE_NAME}"
 
-    CLASH_MODE="stream-one"
     save_node_state
     write_clash_verge_yaml
 
 cat > "$INFO_FILE" <<EOF
 
 =========================================
-Haiou Reality XHTTP 安装完成
+Haiou Reality Vision 安装完成
 =========================================
 
 服务器 IP:
@@ -599,7 +590,7 @@ ${PORT}
 VLESS
 
 传输:
-XHTTP
+TCP + Vision
 
 安全:
 REALITY
@@ -619,11 +610,8 @@ ${SHORT_ID}
 Fingerprint:
 chrome
 
-Path:
-${XHTTP_PATH}
-
 Flow:
-留空
+xtls-rprx-vision
 
 =========================================
 VLESS 分享链接:
@@ -635,7 +623,7 @@ ${VLESS_URI}
 Clash Verge / Mihomo 订阅:
 =========================================
 
-http://${SERVER_IP}/reality-xhttp.yaml
+http://${SERVER_IP}/reality-vision.yaml
 
 =========================================
 常用命令:
@@ -784,6 +772,7 @@ uninstall_all() {
 
     rm -f "$INFO_FILE"
     rm -f "$SUB_FILE"
+    rm -f "$LEGACY_SUB_FILE"
     rm -f "$STATE_FILE"
 
     echo
@@ -797,9 +786,9 @@ menu() {
 
     clear
 
-    echo -e "${GREEN}Haiou Reality XHTTP${PLAIN} v${SCRIPT_VERSION}"
+    echo -e "${GREEN}Haiou Reality Vision${PLAIN} v${SCRIPT_VERSION}"
     echo
-    echo "1. 安装 / 重装 VLESS + REALITY + XHTTP"
+    echo "1. 安装 / 重装 VLESS + REALITY + TCP + Vision"
     echo "2. 查看节点摘要"
     echo "3. 查看二维码"
     echo "4. 重新生成 Clash Verge YAML"

@@ -3,7 +3,7 @@ wget -O /usr/local/bin/haiou https://raw.githubusercontent.com/Eranther/haiou/ma
 
 ## 功能
 
-- 安装 / 重装 VLESS + REALITY + XHTTP
+- 安装 / 重装 VLESS + REALITY + TCP + Vision
 - 生成 Clash Verge / Mihomo YAML 订阅
 - 不重装节点，重新生成 Clash Verge YAML
 - 查看节点摘要 / 完整节点信息 / 二维码
