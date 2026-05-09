@@ -150,6 +150,25 @@ open_firewall() {
 }
 
 ############################################################
+# 检测 Xray 配置
+############################################################
+test_xray_config() {
+
+    if xray run -test -config "$XRAY_CONFIG"; then
+        return 0
+    fi
+
+    if xray -test -config "$XRAY_CONFIG" >/dev/null 2>&1; then
+        xray -test -config "$XRAY_CONFIG"
+        return 0
+    fi
+
+    echo
+    echo -e "${RED}Xray 配置检测失败，请检查上方错误信息${PLAIN}"
+    return 1
+}
+
+############################################################
 # 生成配置
 ############################################################
 generate_config() {
@@ -247,7 +266,7 @@ EOF
     echo
     echo -e "${YELLOW}正在检测配置...${PLAIN}"
 
-    xray test -config "$XRAY_CONFIG"
+    test_xray_config
 
     systemctl enable xray
     systemctl restart xray
