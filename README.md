@@ -1,5 +1,12 @@
 # haiou
-wget -O /usr/local/bin/haiou https://raw.githubusercontent.com/Eranther/haiou/main/haiou.sh && chmod +x /usr/local/bin/haiou && haiou
+
+```
+wget --no-cache -O /usr/local/bin/haiou "https://raw.githubusercontent.com/Eranther/haiou/main/haiou.sh?$(date +%s)"
+
+chmod +x /usr/local/bin/haiou
+
+haiou
+```
 
 ## 功能
 
